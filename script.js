@@ -11,6 +11,7 @@ const inputClimb = document.querySelector('.form__input--climb');
 class Workout {
   date = new Date();
   id = (Date.now() + '').slice(-10);
+  clickNumber = 0;
 
   constructor(coords, distance, duration) {
     this.coords = coords;
@@ -26,6 +27,10 @@ class Workout {
       : (this.descrition = `Велотренировка ${new Intl.DateTimeFormat(
           'ru-Ru'
         ).format(this.date)}`);
+  }
+
+  click() {
+    this.clickNumber++;
   }
 }
 
@@ -60,8 +65,8 @@ class Cycling extends Workout {
   }
 }
 
-// const running = new Running([50, 39], 7, 40, 170)
-// const cycling = new Cycling([50, 39], 37, 80, 370)
+// const running = new Running([50, 39], 7, 40, 170);
+// const cycling = new Cycling([50, 39], 37, 80, 370);
 // console.log(running, cycling);
 
 class App {
@@ -70,11 +75,16 @@ class App {
   #workouts = [];
 
   constructor() {
+    // Получение местоположения пользователя
     this._getPosition();
 
-    form.addEventListener('submit', this._newWorkout.bind(this));
+    // Получение данных из local storage
+    this._getLocalStorageData();
 
+    // Добавление обработчиков события
+    form.addEventListener('submit', this._newWorkout.bind(this));
     inputType.addEventListener('change', this._toggleClimbField);
+    containerWorkouts.addEventListener('click', this._moveToWorkout.bind(this));
   }
 
   _getPosition() {
@@ -91,10 +101,11 @@ class App {
   _loadMap(position) {
     const { latitude } = position.coords;
     const { longitude } = position.coords;
-    console.log(`https://www.google.by/maps/@${latitude},${longitude},14z`);
+    console.log(`https://www.google.com/maps/@${latitude},${longitude},14z`);
 
     const coords = [latitude, longitude];
 
+    console.log(this);
     this.#map = L.map('map').setView(coords, 13);
     // console.log(map);
 
@@ -105,6 +116,11 @@ class App {
 
     // Обработка клика на карте
     this.#map.on('click', this._showForm.bind(this));
+
+    // Отображение тренировок из local storage на карте
+    this.#workouts.forEach(workout => {
+      this._displayWorkout(workout);
+    });
   }
 
   _showForm(e) {
@@ -113,13 +129,22 @@ class App {
     inputDistance.focus();
   }
 
+  _hideForm() {
+    inputDistance.value =
+      inputDuration.value =
+      inputTemp.value =
+      inputClimb.value =
+        '';
+    form.classList.add('hidden');
+  }
+
   _toggleClimbField() {
     inputClimb.closest('.form__row').classList.toggle('form__row--hidden');
     inputTemp.closest('.form__row').classList.toggle('form__row--hidden');
   }
 
   _newWorkout(e) {
-    const arrNumbers = (...numbers) =>
+    const areNumbers = (...numbers) =>
       numbers.every(num => Number.isFinite(num));
 
     const areNumbersPositive = (...numbers) => numbers.every(num => num > 0);
@@ -134,7 +159,7 @@ class App {
     const distance = +inputDistance.value;
     const duration = +inputDuration.value;
 
-    // Если тренировка является пробежкой, стоздать объект Running
+    // Если тренировка является пробежкой, создать объект Running
     if (type === 'running') {
       const temp = +inputTemp.value;
       // Проверка валидности данных
@@ -142,7 +167,7 @@ class App {
         // !Number.isFinite(distance) ||
         // !Number.isFinite(duration) ||
         // !Number.isFinite(temp)
-        !arrNumbers(distance, duration, temp) ||
+        !areNumbers(distance, duration, temp) ||
         !areNumbersPositive(distance, duration, temp)
       )
         return alert('Введите положительное число!');
@@ -150,7 +175,7 @@ class App {
       workout = new Running([lat, lng], distance, duration, temp);
     }
 
-    // Если тренировка является велотнировкой, стоздать объект Cycling
+    // Если тренировка является велотренировкой, создать объект Cycling
     if (type === 'cycling') {
       const climb = +inputClimb.value;
       // Проверка валидности данных
@@ -158,7 +183,7 @@ class App {
         // !Number.isFinite(distance) ||
         // !Number.isFinite(duration) ||
         // !Number.isFinite(climb)
-        !arrNumbers(distance, duration, climb) ||
+        !areNumbers(distance, duration, climb) ||
         !areNumbersPositive(distance, duration)
       )
         return alert('Введите положительное число!');
@@ -168,7 +193,6 @@ class App {
 
     // Добавить новый объект в массив тренировок
     this.#workouts.push(workout);
-    console.log(workout);
 
     // Отобразить тренировку на карте
     this._displayWorkout(workout);
@@ -176,12 +200,11 @@ class App {
     // Отобразить тренировку в списке
     this._displayWorkoutOnSidebar(workout);
 
-    // Спарятать форму и очистить поля ввода данных
-    inputDistance.value =
-      inputDuration.value =
-      inputTemp.value =
-      inputClimb.value =
-        '';
+    // Спрятать форму и очистить поля ввода данных
+    this._hideForm();
+
+    // Добавить все тренировки в локальное хранилище
+    this._addWorkoutsToLocalStorage();
   }
 
   _displayWorkout(workout) {
@@ -196,7 +219,9 @@ class App {
           className: `${workout.type}-popup`,
         })
       )
-      .setPopupContent('Тренировка')
+      .setPopupContent(
+        `${workout.type === 'running' ? '🏃' : '🚵‍♂️'} ${workout.descrition}`
+      )
       .openPopup();
   }
 
@@ -251,6 +276,46 @@ class App {
     }
 
     form.insertAdjacentHTML('afterend', html);
+  }
+
+  _moveToWorkout(e) {
+    const workoutElement = e.target.closest('.workout');
+    console.log(workoutElement);
+
+    if (!workoutElement) return;
+
+    const workout = this.#workouts.find(
+      item => item.id === workoutElement.dataset.id
+    );
+
+    this.#map.setView(workout.coords, 13, {
+      animate: true,
+      pan: {
+        duration: 1,
+      },
+    });
+  }
+
+  _addWorkoutsToLocalStorage() {
+    localStorage.setItem('workouts', JSON.stringify(this.#workouts));
+  }
+
+  _getLocalStorageData() {
+    const data = JSON.parse(localStorage.getItem('workouts'));
+    console.log(data);
+
+    if (!data) return;
+
+    this.#workouts = data;
+
+    this.#workouts.forEach(workout => {
+      this._displayWorkoutOnSidebar(workout);
+    });
+  }
+
+  reset() {
+    localStorage.removeItem('workouts');
+    location.reload();
   }
 }
 
